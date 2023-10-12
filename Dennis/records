@@ -1,0 +1,29 @@
+preliminary:
+    1. sparse view traing 
+        -view dependence
+        -non view-independence (win)
+    
+    2. sparse view traing-how to add back view-dependence info
+        - directly add-back and finetune
+        - your proposed method (decouple view-depence)
+    
+    understand the code (especially on the nerf model part).
+    read decouple paper (clean nerf).
+
+    3. view-depedance color
+       color decoupling
+
+    more tricks for nerf: https://towardsdatascience.com/beyond-nerfs-part-two-83af2bd17d0
+
+clearn-NeRF:
+
+10/12:
+todo:
+1. create git
+2. SSIM, LPIPS (github)
+3. do sparse view training
+4. record the psnr of the final result
+ 
+
+findings:
+1. config file directly load in the code/configargparse.ArgumentParser()

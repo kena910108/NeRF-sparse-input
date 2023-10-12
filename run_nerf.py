@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 from run_nerf_helpers import *
 
+from pdb import set_trace
 from load_llff import load_llff_data
 from load_deepvoxels import load_dv_data
 from load_blender import load_blender_data
@@ -20,6 +21,7 @@ from load_LINEMOD import load_LINEMOD_data
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.cuda.set_device(3) #0,1,2,3
 np.random.seed(0)
 DEBUG = False
 
@@ -184,6 +186,7 @@ def create_nerf(args):
     embeddirs_fn = None
     if args.use_viewdirs:
         embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args.i_embed)
+    set_trace()
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
     model = NeRF(D=args.netdepth, W=args.netwidth,
@@ -551,10 +554,11 @@ def train():
         if args.llffhold > 0:
             print('Auto LLFF holdout,', args.llffhold)
             i_test = np.arange(images.shape[0])[::args.llffhold]
-
+        
         i_val = i_test
         i_train = np.array([i for i in np.arange(int(images.shape[0])) if
                         (i not in i_test and i not in i_val)])
+        
 
         print('DEFINING BOUNDS')
         if args.no_ndc:
@@ -611,7 +615,7 @@ def train():
     H, W, focal = hwf
     H, W = int(H), int(W)
     hwf = [H, W, focal]
-
+  
     if K is None:
         K = np.array([
             [focal, 0, 0.5*W],
@@ -638,6 +642,7 @@ def train():
 
     # Create nerf model
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
+    set_trace()
     global_step = start
 
     bds_dict = {
