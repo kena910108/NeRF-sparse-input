@@ -15,12 +15,6 @@ normalize = lambda x: (2*(x-0.5))
 def sel_i_train(training_scenes, num_scenes):
     #training_scenes -> ndarray
     #num_scenes->int
-
-    #parse
-        #num_scenes cannot bigger than len(training_scene)
-        # if == -1
-        # if != -1
-        # evenly sample number of training_scenes
     if num_scenes > len(training_scenes): raise ValueError(f"args.num_scenes: {num_scenes} > training_scene: {len(traing_scenes)}")
     
     if num_scenes == -1: return

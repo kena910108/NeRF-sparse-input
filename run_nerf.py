@@ -547,6 +547,8 @@ def config_parser():
     parser.add_argument("--eval_test", type=bool, default=True, 
                         help='eval similarity matrix with test image saving')
 
+    args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]"
+    
     return parser
 
 
