@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-
+import math
+from pdb import set_trace
 
 # Misc
 img2mse = lambda x, y : torch.mean((x - y) ** 2)
@@ -11,6 +12,22 @@ mse2psnr = lambda x : -10. * torch.log(x) / torch.log(torch.Tensor([10.]))
 to8b = lambda x : (255*np.clip(x,0,1)).astype(np.uint8)
 normalize = lambda x: (2*(x-0.5))
 
+def sel_i_train(training_scenes, num_scenes):
+    #training_scenes -> ndarray
+    #num_scenes->int
+
+    #parse
+        #num_scenes cannot bigger than len(training_scene)
+        # if == -1
+        # if != -1
+        # evenly sample number of training_scenes
+    if num_scenes > len(training_scenes): raise ValueError(f"args.num_scenes: {num_scenes} > training_scene: {len(traing_scenes)}")
+    
+    if num_scenes == -1: return
+    else:
+        sel_indices = np.linspace(start=0, stop=(len(training_scenes) - 1), num=num_scenes, dtype=int)
+        training_scenes = training_scenes[sel_indices]
+        return training_scenes
 
 # Positional encoding (section 5.1)
 class Embedder:

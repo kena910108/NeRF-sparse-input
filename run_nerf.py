@@ -494,13 +494,18 @@ def config_parser():
     parser.add_argument("--precrop_iters", type=int, default=0,
                         help='number of steps to train on central crops')
     parser.add_argument("--precrop_frac", type=float,
-                        default=.5, help='fraction of img taken for central crops') 
+                        default=.5, help='fraction of img taken for central crops')
+    parser.add_argument("--training_iters", type=int, default=200000,
+                        help="number of steps to train a NeRF")
 
     # dataset options
     parser.add_argument("--dataset_type", type=str, default='llff', 
                         help='options: llff / blender / deepvoxels')
     parser.add_argument("--testskip", type=int, default=8, 
                         help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
+    parser.add_argument("--num_scenes", type=int, default=-1,
+                        help='used training scences of the dataset')
+    
 
     ## deepvoxels flags
     parser.add_argument("--shape", type=str, default='greek', 
@@ -686,8 +691,9 @@ def train():
             rgbs, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test, gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor)
             print('Done rendering', testsavedir)
             imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
-
             return
+
+    i_train = sel_i_train(i_train, args.num_scenes)
 
     # Prepare raybatch tensor if batching random rays
     N_rand = args.N_rand
@@ -716,7 +722,7 @@ def train():
         rays_rgb = torch.Tensor(rays_rgb).to(device)
 
 
-    N_iters = 200000 + 1
+    args.training_iters += 1
     print('Begin')
     print('TRAIN views are', i_train)
     print('TEST views are', i_test)
@@ -726,7 +732,7 @@ def train():
     # writer = SummaryWriter(os.path.join(basedir, 'summaries', expname))
     
     start = start + 1
-    for i in trange(start, N_iters):
+    for i in trange(start, args.training_iters):
         time0 = time.time()
 
         # Sample random ray batch
