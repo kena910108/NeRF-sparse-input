@@ -212,7 +212,7 @@ def create_nerf(args):
                                                                 netchunk=args.netchunk)
 
     # Create optimizer
-    optimizer = torch.optim.Adam(params=grad_vars, lr=args.lrate, betas=(0.9, 0.999))
+    optimizer = torch.optim.Adam(params=grad_vars, lr=args.start_lr, betas=(0.9, 0.999))
 
     start = 0
     basedir = args.basedir
@@ -450,10 +450,14 @@ def config_parser():
                         help='channels per layer in fine network')
     parser.add_argument("--N_rand", type=int, default=32*32*4, 
                         help='batch size (number of random rays per gradient step)')
-    parser.add_argument("--lrate", type=float, default=5e-4, 
-                        help='learning rate')
-    parser.add_argument("--lrate_decay", type=int, default=250, 
-                        help='exponential learning rate decay (in 1000 steps)')
+    # parser.add_argument("--lrate", type=float, default=5e-4, 
+    #                     help='learning rate')
+    # parser.add_argument("--lrate_decay", type=int, default=250, 
+    #                     help='exponential learning rate decay (in 1000 steps)')
+    parser.add_argument("--start_lr", type=float, default=2e-3,
+                        help='starting learning rate')
+    parser.add_argument("--end_lr", type=float, default=2e-5,
+                        help='starting learning rate')
     parser.add_argument("--chunk", type=int, default=1024*32, 
                         help='number of rays processed in parallel, decrease if running out of memory')
     parser.add_argument("--netchunk", type=int, default=1024*64, 
@@ -801,9 +805,11 @@ def train():
 
         # NOTE: IMPORTANT!
         ###   update learning rate   ###
-        decay_rate = 0.1
-        decay_steps = args.lrate_decay * 1000
-        new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
+        # decay_rate = 0.1
+        # decay_steps = args.lrate_decay * 1000
+        # new_lrate = args.lrate * (decay_rate ** (global_step / decay_steps))
+        new_lrate = args.start_lr*((args.end_lr/args.start_lr)**(global_step/(args.training_iters-2)))
+
         for param_group in optimizer.param_groups:
             param_group['lr'] = new_lrate
         ################################
