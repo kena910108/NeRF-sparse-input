@@ -19,7 +19,7 @@ from load_deepvoxels import load_dv_data
 from load_blender import load_blender_data
 from load_LINEMOD import load_LINEMOD_data
 
-import torch
+import tensorflow as tf
 import lpips
 import torchvision.transforms as transforms
 from skimage.metrics import peak_signal_noise_ratio as psnr_mtx
@@ -650,6 +650,10 @@ def train():
     #create eval matrix and tensor board
     lpips_vgg = lpips.LPIPS(net='vgg')
 
+    log_dir = os.path.join(basedir, expname, 'tensorboard')
+    summary_writer = tf.summary.create_file_writer(log_dir)
+
+
     # Create nerf model
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
     global_step = start
@@ -841,6 +845,16 @@ def train():
                     psnr_test = np.mean([psnr_mtx(images[i_test][j].cpu().numpy(), render_test[j], data_range=1.) for j in range(len(i_test))])
                     ssim_test = np.mean([ssim_mtx(images[i_test][j].cpu().numpy(), render_test[j], channel_axis=2, data_range=1.) for j in range(len(i_test))])                  
                     tqdm.write(f"[EVAL] Iter:{i}, PSNR: {psnr_test}, SSIM:{ssim_test}, LPIPS: {lpips_test}")
+                    with summary_writer.as_default():
+                        tf.summary.scalar('lpips_test', lpips_test, step=i)
+                        tf.summary.scalar('psnr_test', psnr_test, step=i)
+                        tf.summary.scalar('ssim_test', ssim_test, step=i)
+                        tf.summary.scalar('psnr_train', psnr.item(), step=i)
+                        tf.summary.scalar('mse_train', loss.item(), step=i) 
+
+                        for j in range(len(i_test)):
+                            tf.summary.image('{:03d}.png'.format(j), torch.tensor(to8b(render_test[j])).unsqueeze(0).cpu(), step=i)               
+
 
         if i%args.i_print==0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
