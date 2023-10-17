@@ -17,7 +17,8 @@ def sel_i_train(training_scenes, num_scenes):
     #num_scenes->int
     if num_scenes > len(training_scenes): raise ValueError(f"args.num_scenes: {num_scenes} > training_scene: {len(traing_scenes)}")
     
-    if num_scenes == -1: return
+    if num_scenes == -1: 
+        return training_scenes
     else:
         sel_indices = np.linspace(start=0, stop=(len(training_scenes) - 1), num=num_scenes, dtype=int)
         training_scenes = training_scenes[sel_indices]
