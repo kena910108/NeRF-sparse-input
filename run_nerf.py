@@ -437,7 +437,8 @@ def config_parser():
                         help='input data directory')
     parser.add_argument("--seed", type=int, default='0', 
                         help='set seed')
-    
+    parser.add_argument("--setdevice", type=int, default='0', 
+                        help='set gpu device')
 
     # training options
     parser.add_argument("--netdepth", type=int, default=8, 
@@ -556,8 +557,11 @@ def train():
     args = parser.parse_args()
     args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]"
     
-    torch.cuda.set_device(2) #0,1,2,3
+    torch.cuda.set_device(args.setdevice) #0,1,2,3
+    print(f"device: {args.setdevice}")
     set_seed(args.seed)
+    print(f"seed: {args.seed}")
+
 
     # Load data
     K = None
