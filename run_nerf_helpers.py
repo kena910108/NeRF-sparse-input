@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import math
+import random
 from pdb import set_trace
 
 # Misc
@@ -11,6 +11,16 @@ img2mse = lambda x, y : torch.mean((x - y) ** 2)
 mse2psnr = lambda x : -10. * torch.log(x) / torch.log(torch.Tensor([10.]))
 to8b = lambda x : (255*np.clip(x,0,1)).astype(np.uint8)
 normalize = lambda x: (2*(x-0.5))
+
+def set_seed(seed, benchmark=True, deterministic=True):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.cuda.benchmark = benchmark
+        torch.cuda.deterministic = deterministic
 
 def sel_i_train(training_scenes, num_scenes):
     #training_scenes -> ndarray

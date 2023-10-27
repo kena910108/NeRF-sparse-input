@@ -27,8 +27,6 @@ from skimage.metrics import structural_similarity as ssim_mtx
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-torch.cuda.set_device(2) #0,1,2,3
-np.random.seed(0)
 DEBUG = False
 
 
@@ -225,7 +223,6 @@ def create_nerf(args):
         ckpts = [args.ft_path]
     else:
         ckpts = [os.path.join(basedir, expname, f) for f in sorted(os.listdir(os.path.join(basedir, expname))) if 'tar' in f]
-        set_trace()
     print('Found ckpts', ckpts)
     if len(ckpts) > 0 and not args.no_reload:
         ckpt_path = ckpts[-1]
@@ -438,6 +435,9 @@ def config_parser():
                         help='where to store ckpts and logs')
     parser.add_argument("--datadir", type=str, default='./data/llff/fern', 
                         help='input data directory')
+    parser.add_argument("--seed", type=int, default='0', 
+                        help='set seed')
+    
 
     # training options
     parser.add_argument("--netdepth", type=int, default=8, 
@@ -552,11 +552,13 @@ def config_parser():
 
 
 def train():
-
     parser = config_parser()
     args = parser.parse_args()
     args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]"
     
+    torch.cuda.set_device(2) #0,1,2,3
+    set_seed(args.seed)
+
     # Load data
     K = None
     if args.dataset_type == 'llff':
