@@ -22,6 +22,12 @@ def set_seed(seed, benchmark=True, deterministic=True):
         torch.cuda.benchmark = benchmark
         torch.cuda.deterministic = deterministic
 
+def check_arg(parser):
+    args = parser.parse_args()
+    if (args.train_mode is 'normal') and args.add_view_iters!=0: raise ValueError(f"should not set add_view iters in train mode: {args.train_mode}")
+    if args.add_view_iters>args.training_iters: raise ValueError(f"add_view_iters: {args.add_view_iters} exceeds training_iters:{args.training_iters}")
+    return
+
 def sel_i_train(training_scenes, num_scenes):
     #training_scenes -> ndarray
     #num_scenes->int

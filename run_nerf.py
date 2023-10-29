@@ -58,6 +58,7 @@ def run_network(inputs, viewdirs, fn, embed_fn, embeddirs_fn, netchunk=1024*64):
 
 
 def batchify_rays(rays_flat, chunk=1024*32, **kwargs):
+
     """Render rays in smaller minibatches to avoid OOM.
     """
     all_ret = {}
@@ -127,9 +128,10 @@ def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
     rays = torch.cat([rays_o, rays_d, near, far], -1)
     if use_viewdirs:
         rays = torch.cat([rays, viewdirs], -1)
-
+    # set_trace()
     # Render and reshape
     all_ret = batchify_rays(rays, chunk, **kwargs)
+
     for k in all_ret:
         k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
         all_ret[k] = torch.reshape(all_ret[k], k_sh)
@@ -208,7 +210,7 @@ def create_nerf(args):
                                                                 embed_fn=embed_fn,
                                                                 embeddirs_fn=embeddirs_fn,
                                                                 netchunk=args.netchunk)
-
+    
     # Create optimizer
     optimizer = torch.optim.Adam(params=grad_vars, lr=args.start_lr, betas=(0.9, 0.999))
 
@@ -314,6 +316,8 @@ def render_rays(ray_batch,
                 network_fn,
                 network_query_fn,
                 N_samples,
+                iter,
+                add_view_iters,
                 retraw=False,
                 lindisp=False,
                 perturb=0.,
@@ -359,6 +363,9 @@ def render_rays(ray_batch,
     bounds = torch.reshape(ray_batch[...,6:8], [-1,1,2])
     near, far = bounds[...,0], bounds[...,1] # [-1,1]
 
+    if (iter <= add_view_iters) and (viewdirs is not None):
+        viewdirs = torch.zeros(viewdirs.shape)
+
     t_vals = torch.linspace(0., 1., steps=N_samples)
     if not lindisp:
         z_vals = near * (1.-t_vals) + far * (t_vals)
@@ -385,7 +392,6 @@ def render_rays(ray_batch,
 
     pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples, 3]
 
-
 #     raw = run_network(pts)
     raw = network_query_fn(pts, viewdirs, network_fn)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
@@ -400,7 +406,7 @@ def render_rays(ray_batch,
 
         z_vals, _ = torch.sort(torch.cat([z_vals, z_samples], -1), -1)
         pts = rays_o[...,None,:] + rays_d[...,None,:] * z_vals[...,:,None] # [N_rays, N_samples + N_importance, 3]
-
+        
         run_fn = network_fn if network_fine is None else network_fine
 #         raw = run_network(pts, fn=run_fn)
         raw = network_query_fn(pts, viewdirs, run_fn)
@@ -439,6 +445,12 @@ def config_parser():
                         help='set seed')
     parser.add_argument("--setdevice", type=int, default='0', 
                         help='set gpu device')
+
+    #training mode
+    parser.add_argument("--train_mode", type=str, default="normal", choices=["normal","two-stage"],
+                        help="normal training method or two stage training")
+    parser.add_argument("--add_view_iters", type=int, default=0,
+                        help="only valid under two-stage training mode")
 
     # training options
     parser.add_argument("--netdepth", type=int, default=8, 
@@ -554,9 +566,10 @@ def config_parser():
 
 def train():
     parser = config_parser()
+    check_arg(parser)
     args = parser.parse_args()
     args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]"
-    
+
     torch.cuda.set_device(args.setdevice) #0,1,2,3
     print(f"device: {args.setdevice}")
     set_seed(args.seed)
@@ -673,6 +686,7 @@ def train():
 
     # Create nerf model
     render_kwargs_train, render_kwargs_test, start, grad_vars, optimizer = create_nerf(args)
+
     global_step = start
 
     bds_dict = {
@@ -742,10 +756,12 @@ def train():
 
     # Summary writers
     # writer = SummaryWriter(os.path.join(basedir, 'summaries', expname))
-    
+    render_kwargs_train.update({"iter":0, "add_view_iters":args.add_view_iters})
+
     start = start + 1
     for i in trange(start, args.training_iters):
         time0 = time.time()
+        render_kwargs_train['iter']=i
 
         # Sample random ray batch
         if use_batching:
@@ -791,6 +807,7 @@ def train():
                 rays_d = rays_d[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
                 batch_rays = torch.stack([rays_o, rays_d], 0)
                 target_s = target[select_coords[:, 0], select_coords[:, 1]]  # (N_rand, 3)
+
 
         #####  Core optimization loop  #####
         rgb, disp, acc, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
