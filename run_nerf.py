@@ -568,7 +568,7 @@ def train():
     parser = config_parser()
     check_arg(parser)
     args = parser.parse_args()
-    args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]"
+    args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]_s[{args.seed}]"
 
     torch.cuda.set_device(args.setdevice) #0,1,2,3
     print(f"device: {args.setdevice}")
@@ -756,12 +756,17 @@ def train():
 
     # Summary writers
     # writer = SummaryWriter(os.path.join(basedir, 'summaries', expname))
-    render_kwargs_train.update({"iter":0, "add_view_iters":args.add_view_iters})
+    train_info_dict = {"iter":0, "add_view_iters":args.add_view_iters}
+    render_kwargs_train.update(train_info_dict)
+    render_kwargs_test.update(train_info_dict)
+
 
     start = start + 1
     for i in trange(start, args.training_iters):
         time0 = time.time()
         render_kwargs_train['iter']=i
+        render_kwargs_test['iter']=i
+
 
         # Sample random ray batch
         if use_batching:
