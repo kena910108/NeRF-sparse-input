@@ -194,16 +194,27 @@ def create_nerf(args):
         embeddirs_fn, input_ch_views = get_embedder(args.multires_views, args.i_embed)
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
-    model = NeRF(D=args.netdepth, W=args.netwidth,
+    if args.train_mode=="prnerf":
+        model = PRNeRF(D=args.netdepth, W=args.netwidth,
+                 input_ch=input_ch, output_ch=output_ch, skips=skips,
+                 input_ch_views=input_ch_views, relight=False).to(device)
+    else:
+        model = NeRF(D=args.netdepth, W=args.netwidth,
                  input_ch=input_ch, output_ch=output_ch, skips=skips,
                  input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
     grad_vars = list(model.parameters())
 
     model_fine = None
     if args.N_importance > 0:
-        model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
+        if args.train_mode=="prnerf":
+            model_fine = PRNeRF(D=args.netdepth_fine, W=args.netwidth_fine,
+                          input_ch=input_ch, output_ch=output_ch, skips=skips,
+                          input_ch_views=input_ch_views, relight=False).to(device)
+        else:    
+            model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
                           input_ch=input_ch, output_ch=output_ch, skips=skips,
                           input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs).to(device)
+            
         grad_vars += list(model_fine.parameters())
 
     network_query_fn = lambda inputs, viewdirs, network_fn : run_network(inputs, viewdirs, network_fn,
@@ -447,9 +458,15 @@ def config_parser():
                         help='set gpu device')
 
     #training mode
-    parser.add_argument("--train_mode", type=str, default="normal", choices=["normal","two-stage"],
-                        help="normal training method or two stage training")
+    parser.add_argument("--train_mode", type=str, default="normal", choices=["normal","two-stage", "prnerf"],
+                        help="normal training method or two stage training or decouple")
+    
+    #two-stage
     parser.add_argument("--add_view_iters", type=int, default=0,
+                        help="only valid under two-stage training mode")
+    
+    #prnerf
+    parser.add_argument("--relight_iters", type=int, default=0,
                         help="only valid under two-stage training mode")
 
     # training options
@@ -560,15 +577,13 @@ def config_parser():
     parser.add_argument("--eval_test", type=bool, default=True, 
                         help='eval similarity matrix with test image saving')
 
-    args = parser.parse_args()
     return parser
 
 
 def train():
     parser = config_parser()
-    check_arg(parser)
     args = parser.parse_args()
-    args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]_s[{args.seed}]"
+    check_arg(args)
 
     torch.cuda.set_device(args.setdevice) #0,1,2,3
     print(f"device: {args.setdevice}")
@@ -767,6 +782,9 @@ def train():
         render_kwargs_train['iter']=i
         render_kwargs_test['iter']=i
 
+        if i >= args.relight_iters:
+            render_kwargs_train['network_fn'].relight=True
+            render_kwargs_train['network_fine'].relight=True           
 
         # Sample random ray batch
         if use_batching:
