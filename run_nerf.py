@@ -1,4 +1,5 @@
 import os, sys
+import gc
 import numpy as np
 import imageio
 import json
@@ -890,6 +891,10 @@ def train():
             imageio.mimwrite(moviebase + 'rgb.mp4', to8b(rgbs), fps=30, quality=8)
             imageio.mimwrite(moviebase + 'disp.mp4', to8b(disps / np.max(disps)), fps=30, quality=8)
 
+            rgbs.to('cpu')
+            disps.to('cpu')
+            torch.cuda.empty_cache()
+            gc.collect()
             # if args.use_viewdirs:
             #     render_kwargs_test['c2w_staticcam'] = render_poses[0][:3,:4]
             #     with torch.no_grad():
@@ -918,7 +923,11 @@ def train():
 
                         for j in range(len(i_test)):
                             tf.summary.image('{:03d}.png'.format(j), torch.tensor(to8b(render_test[j])).unsqueeze(0).cpu(), step=i)               
-
+            render_test.to('cpu')
+            _.to('cpu')
+            torch.cuda.empty_cache()
+            gc.collect()
+             
 
         if i%args.i_print==0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
