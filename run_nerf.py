@@ -603,14 +603,18 @@ def train():
         if not isinstance(i_test, list):
             i_test = [i_test]
 
+        print('Auto LLFF holdout,', args.llffhold)
+
         if args.llffhold > 0:
-            print('Auto LLFF holdout,', args.llffhold)
             i_test = np.arange(images.shape[0])[::args.llffhold]
+            i_val = i_test
+            i_train = np.array([i for i in np.arange(int(images.shape[0])) if
+                (i not in i_test and i not in i_val)])
         
-        i_val = i_test
-        i_train = np.array([i for i in np.arange(int(images.shape[0])) if
-                        (i not in i_test and i not in i_val)])
-        
+        if args.llffhold == -1:
+            i_test = np.arange(images.shape[0])
+            i_train = i_test
+            i_val = i_test
 
         print('DEFINING BOUNDS')
         if args.no_ndc:
@@ -782,9 +786,9 @@ def train():
         render_kwargs_train['iter']=i
         render_kwargs_test['iter']=i
 
-        if i >= args.relight_iters:
-            render_kwargs_train['network_fn'].relight=True
-            render_kwargs_train['network_fine'].relight=True           
+        if i == args.relight_iters:
+            render_kwargs_train['network_fn'].relighting()
+            render_kwargs_train['network_fine'].relighting()
 
         # Sample random ray batch
         if use_batching:
