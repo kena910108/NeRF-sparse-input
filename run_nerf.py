@@ -160,7 +160,9 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
     for i, c2w in enumerate(tqdm(render_poses)):
         print(i, time.time() - t)
         t = time.time()
+
         rgb, disp, acc, depth, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3,:4], **render_kwargs)
+
         rgbs.append(rgb.cpu().numpy())
         disps.append(disp.cpu().numpy())
         if i==0:
@@ -180,6 +182,9 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
 
     rgbs = np.stack(rgbs, 0)
     disps = np.stack(disps, 0)
+
+    # torch.cuda.empty_cache()
+    # gc.collect()
 
     return rgbs, disps
 
@@ -710,9 +715,6 @@ def train():
         f = os.path.join(basedir, expname, 'config.txt')
         with open(f, 'w') as file:
             file.write(open(args.config, 'r').read())
-    
-    #create eval matrix and tensor board
-    lpips_vgg = lpips.LPIPS(net='vgg')
 
     log_dir = os.path.join(basedir, expname, 'tensorboard')
     summary_writer = tf.summary.create_file_writer(log_dir)
@@ -732,6 +734,8 @@ def train():
 
     # Move testing data to GPU
     render_poses = torch.Tensor(render_poses).to(device)
+    render_poses_test = torch.Tensor(poses[i_test]).to(device)
+
 
     # Short circuit if only rendering out from trained model
     if args.render_only:
@@ -931,10 +935,6 @@ def train():
             imageio.mimwrite(moviebase + 'rgb.mp4', to8b(rgbs), fps=30, quality=8)
             imageio.mimwrite(moviebase + 'disp.mp4', to8b(disps / np.max(disps)), fps=30, quality=8)
 
-            rgbs.to('cpu')
-            disps.to('cpu')
-            torch.cuda.empty_cache()
-            gc.collect()
             # if args.use_viewdirs:
             #     render_kwargs_test['c2w_staticcam'] = render_poses[0][:3,:4]
             #     with torch.no_grad():
@@ -947,27 +947,29 @@ def train():
             os.makedirs(testsavedir, exist_ok=True)
             print('test poses shape', poses[i_test].shape)
             with torch.no_grad():
-                render_test, _ = render_path(torch.Tensor(poses[i_test]).to(device), hwf, K, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir)
+                render_test, _ = render_path(render_poses_test, hwf, K, args.chunk, render_kwargs_test, gt_imgs=images[i_test], savedir=testsavedir)
                 print('Saved test set')
                 if args.eval_test==True:
-                    lpips_test = lpips_vgg(normalize(torch.tensor(render_test).permute(0,3,1,2)), normalize(images[i_test].permute(0,3,1,2))).mean().item()                 
+                    if args.llffhold != -1:
+                        lpips_vgg = lpips.LPIPS(net='vgg')
+                        lpips_test = lpips_vgg(normalize(torch.tensor(render_test).permute(0,3,1,2)), normalize(images[i_test].permute(0,3,1,2))).mean().item()                 
                     psnr_test = np.mean([psnr_mtx(images[i_test][j].cpu().numpy(), render_test[j], data_range=1.) for j in range(len(i_test))])
                     ssim_test = np.mean([ssim_mtx(images[i_test][j].cpu().numpy(), render_test[j], channel_axis=2, data_range=1.) for j in range(len(i_test))])                  
-                    tqdm.write(f"[EVAL] Iter:{i}, PSNR: {psnr_test}, SSIM:{ssim_test}, LPIPS: {lpips_test}")
+                    # tqdm.write(f"[EVAL] Iter:{i}, PSNR: {psnr_test}, SSIM:{ssim_test}, LPIPS: {lpips_test}")
                     with summary_writer.as_default():
-                        tf.summary.scalar('lpips_test', lpips_test, step=i)
+                        if args.llffhold != -1:
+                            tf.summary.scalar('lpips_test', lpips_test, step=i)
                         tf.summary.scalar('psnr_test', psnr_test, step=i)
                         tf.summary.scalar('ssim_test', ssim_test, step=i)
                         tf.summary.scalar('psnr_train', psnr.item(), step=i)
                         tf.summary.scalar('mse_train', loss.item(), step=i) 
 
                         for j in range(len(i_test)):
-                            tf.summary.image('{:03d}.png'.format(j), torch.tensor(to8b(render_test[j])).unsqueeze(0).cpu(), step=i)               
-            render_test.to('cpu')
-            _.to('cpu')
-            torch.cuda.empty_cache()
-            gc.collect()
-             
+                            tf.summary.image('{:03d}.png'.format(j), torch.tensor(to8b(render_test[j])).unsqueeze(0).cpu(), step=i)
+                    
+                    torch.cuda.empty_cache()
+                    gc.collect()
+                    
 
         if i%args.i_print==0:
             tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
