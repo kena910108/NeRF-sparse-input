@@ -893,7 +893,6 @@ def train():
             if 'disp0' in extras and args.regularize > 0.0:
                 depth_loss0 = depth2mse(extras['disp0'], patch_size) * args.regularize
                 loss += depth_loss0
-        print(loss)
         loss.backward()
         optimizer.step()
 
