@@ -1,0 +1,1 @@
+nohup python3.10 run_nerf.py --config myconfigs/room_two_stage_50000.txt &> print_01_8.txt &
