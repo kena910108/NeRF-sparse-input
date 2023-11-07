@@ -149,7 +149,6 @@ class PRNeRF(nn.Module):
                 x = F.relu(x)
             
             relight_out = self.relight_output(x)
-            set_trace()
             paint_out[...,:3] = paint_out[...,:3] + relight_out
             return paint_out
 
