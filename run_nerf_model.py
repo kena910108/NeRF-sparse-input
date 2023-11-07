@@ -113,7 +113,7 @@ class PRNeRF(nn.Module):
         self.relight_linears = nn.ModuleList(
             [nn.Linear(input_ch+input_ch_views, W)] + [nn.Linear(W,W) for i in range(relightD)]
         )
-        self.relight_output = nn.Linear(W, output_ch-1) # need not to have sigma
+        self.relight_output = nn.Linear(W, 3) # need not to have sigma
 
         ### Implementation according to the official code release (https://github.com/bmild/nerf/blob/master/run_nerf_helpers.py#L104-L105)
         # self.views_linears = nn.ModuleList([nn.Linear(input_ch_views + W, W//2)])
@@ -145,10 +145,21 @@ class PRNeRF(nn.Module):
             for i, l in enumerate(self.relight_linears):
                 x = self.relight_linears[i](x)
                 x = F.relu(x)
-            
             relight_out = self.relight_output(x)
             paint_out[...,:3] = paint_out[...,:3] + relight_out
             return paint_out
 
         else:
             return paint_out
+    
+    def freeze_paint(self):
+        for layer in self.paint_linears:
+            for param in layer.parameters():
+                param.requires_grad = False
+
+        for param in self.paint_output.parameters():
+            param.requires_grad = False
+    
+    def relighting(self):
+        self.relight = True
+        self.freeze_paint()
