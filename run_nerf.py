@@ -137,7 +137,7 @@ def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
         k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
         all_ret[k] = torch.reshape(all_ret[k], k_sh)
 
-    k_extract = ['rgb_map', 'disp_map', 'acc_map']
+    k_extract = ['rgb_map', 'disp_map', 'acc_map', 'depth_map']
     ret_list = [all_ret[k] for k in k_extract]
     ret_dict = {k : all_ret[k] for k in all_ret if k not in k_extract}
     return ret_list + [ret_dict]
@@ -161,7 +161,8 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
         print(i, time.time() - t)
         t = time.time()
 
-        rgb, disp, acc, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3,:4], **render_kwargs)
+        rgb, disp, acc, depth, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3,:4], **render_kwargs)
+
         rgbs.append(rgb.cpu().numpy())
         disps.append(disp.cpu().numpy())
         if i==0:
@@ -319,13 +320,14 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=F
     rgb_map = torch.sum(weights[...,None] * rgb, -2)  # [N_rays, 3]
 
     depth_map = torch.sum(weights * z_vals, -1)
-    disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
+    weight_sum = torch.max(1e-10 * torch.ones_like(depth_map), torch.sum(weights, -1))
+    disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map / weight_sum)
     acc_map = torch.sum(weights, -1)
 
     if white_bkgd:
         rgb_map = rgb_map + (1.-acc_map[...,None])
 
-    return rgb_map, disp_map, acc_map, weights, depth_map
+    return rgb_map, disp_map, acc_map, weights, disp_map
 
 
 def render_rays(ray_batch,
@@ -414,7 +416,7 @@ def render_rays(ray_batch,
 
     if N_importance > 0:
 
-        rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
+        rgb_map_0, disp_map_0, acc_map_0, depth_map_0 = rgb_map, disp_map, acc_map, depth_map
 
         z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
         z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
@@ -429,13 +431,14 @@ def render_rays(ray_batch,
 
         rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
-    ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map}
+    ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'depth_map' : depth_map}
     if retraw:
         ret['raw'] = raw
     if N_importance > 0:
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
+        ret['depth0'] = depth_map_0
         ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
     for k in ret:
@@ -582,8 +585,20 @@ def config_parser():
     parser.add_argument("--eval_test", type=bool, default=True, 
                         help='eval similarity matrix with test image saving')
 
+    ## regularize
+    parser.add_argument("--regularize", type=float, default= 0.0, help='set regularize parameter')
+    parser.add_argument("--patch_size", type=int, default= 0, help='patch size for regularization (RegNeRF)')
+    
     return parser
 
+def depth2mse(depth, patch_size):
+    patches = depth.reshape(-1, patch_size, patch_size)
+    patches_V00 = patches[:, :-1, :-1]
+    patches_V01 = patches[:, :-1, 1:]
+    patches_V10 = patches[:, 1:, :-1]
+    
+    #return torch.mean(torch.abs(patches_V00 - patches_V01) + torch.abs(patches_V00 - patches_V10))
+    return torch.mean((patches_V00 - patches_V01)**2 + (patches_V00 - patches_V10)**2)
 
 def train():
     parser = config_parser()
@@ -747,6 +762,9 @@ def train():
     # Prepare raybatch tensor if batching random rays
     N_rand = args.N_rand
     use_batching = not args.no_batching
+    
+    patch_size = args.patch_size
+
     if use_batching:
         # For random ray batching
         print('get rays')
@@ -755,10 +773,24 @@ def train():
         rays_rgb = np.concatenate([rays, images[:,None]], 1) # [N, ro+rd+rgb, H, W, 3]
         rays_rgb = np.transpose(rays_rgb, [0,2,3,1,4]) # [N, H, W, ro+rd+rgb, 3]
         rays_rgb = np.stack([rays_rgb[i] for i in i_train], 0) # train images only
-        rays_rgb = np.reshape(rays_rgb, [-1,3,3]) # [(N-1)*H*W, ro+rd+rgb, 3]
-        rays_rgb = rays_rgb.astype(np.float32)
-        print('shuffle rays')
-        np.random.shuffle(rays_rgb)
+        if patch_size > 0:
+            xy0 = np.stack(np.meshgrid(np.arange(H - patch_size + 1), np.arange(W - patch_size + 1), indexing='xy'), axis=-1)
+            xy0 = np.reshape(xy0,[-1, 1, 2])
+            patch_idx = xy0 + np.stack( np.meshgrid(np.arange(patch_size), np.arange(patch_size), indexing='xy'),
+                axis=-1).reshape(1, -1, 2)
+            patch_idx = np.reshape(patch_idx, [-1, 2])
+            print('generate patches')
+            rays_rgb = rays_rgb[:, patch_idx[Ellipsis, 0], patch_idx[Ellipsis, 1]]
+            rays_rgb = np.reshape(rays_rgb, [-1,patch_size**2,3,3])
+            rays_rgb = rays_rgb.astype(np.float32)
+            np.random.shuffle(rays_rgb)
+            rays_rgb = np.reshape(rays_rgb, [-1,3,3])
+        else:
+            rays_rgb = np.reshape(rays_rgb, [-1,3,3]) # [(N-1)*H*W, ro+rd+rgb, 3]
+            rays_rgb = rays_rgb.astype(np.float32)
+            print('shuffle rays')
+            np.random.shuffle(rays_rgb)
+        
 
         print('done')
         i_batch = 0
@@ -797,6 +829,8 @@ def train():
         # Sample random ray batch
         if use_batching:
             # Random over all images
+            if patch_size > 0:
+                N_rand = (N_rand // (patch_size ** 2)) *(patch_size ** 2)
             batch = rays_rgb[i_batch:i_batch+N_rand] # [B, 2+1, 3*?]
             batch = torch.transpose(batch, 0, 1)
             batch_rays, target_s = batch[:2], batch[2]
@@ -841,7 +875,7 @@ def train():
 
 
         #####  Core optimization loop  #####
-        rgb, disp, acc, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
+        rgb, disp, acc, depth, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
                                                 verbose=i < 10, retraw=True,
                                                 **render_kwargs_train)
 
@@ -851,11 +885,18 @@ def train():
         loss = img_loss
         psnr = mse2psnr(img_loss)
 
+        if args.regularize > 0.0:
+            depth_loss = depth2mse(disp, patch_size) * args.regularize
+            loss += depth_loss
+
         if 'rgb0' in extras:
             img_loss0 = img2mse(extras['rgb0'], target_s)
             loss = loss + img_loss0
             psnr0 = mse2psnr(img_loss0)
 
+            if 'disp0' in extras and args.regularize > 0.0:
+                depth_loss0 = depth2mse(extras['disp0'], patch_size) * args.regularize
+                loss += depth_loss0
         loss.backward()
         optimizer.step()
 
