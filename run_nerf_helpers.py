@@ -30,8 +30,9 @@ def check_arg(args):
     if (args.train_mode == 'prnerf'): 
         if not args.use_viewdirs:
             raise ValueError(f"If train mode == prnerf, use_viewdirs must be True")
-    args.expname += f"_scene[{args.num_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]_s[{args.seed}]"
+    args.expname += f"_scene[{args.train_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]_s[{args.seed}]"
     
+    assert args.no_batching == False, f"no_batching reload data is not implemented"
     return 
 
 def sel_i_train(training_scenes, num_scenes):

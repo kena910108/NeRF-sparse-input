@@ -545,9 +545,10 @@ def config_parser():
                         help='options: llff / blender / deepvoxels')
     parser.add_argument("--testskip", type=int, default=8, 
                         help='will load 1/N images from test/val sets, useful for large datasets like deepvoxels')
-    parser.add_argument("--num_scenes", type=int, default=-1,
+    # parser.add_argument("--num_scenes", type=int, default=-1,
+    #                     help='used training scences of the dataset')
+    parser.add_argument("--train_scenes", type=int, action='append',
                         help='used training scences of the dataset')
-    
 
     ## deepvoxels flags
     parser.add_argument("--shape", type=str, default='greek', 
@@ -626,10 +627,14 @@ def train():
         print('Auto LLFF holdout,', args.llffhold)
 
         if args.llffhold > 0:
-            i_test = np.arange(images.shape[0])[::args.llffhold]
+            i_test = np.delete(np.arange(images.shape[0])[::args.llffhold],0)
             i_val = i_test
-            i_train = np.array([i for i in np.arange(int(images.shape[0])) if
-                (i not in i_test and i not in i_val)])
+            # i_train = np.array([i for i in np.arange(int(images.shape[0])) if
+            #     (i not in i_test and i not in i_val)])
+            i_train = np.array(args.train_scenes).squeeze()
+            
+            assert np.intersect1d(i_train, i_test).size == 0, f"Error, duplicate scenes between train and test: {np.intersect1d(i_train, i_test)}"
+
         
         if args.llffhold == -1:
             i_test = np.arange(images.shape[0])
@@ -757,8 +762,8 @@ def train():
             imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
             return
 
-    i_train = sel_i_train(i_train, args.num_scenes)
-
+    # i_train = sel_i_train(i_train, args.num_scenes)
+    # i_train = args.train_scenes
     # Prepare raybatch tensor if batching random rays
     N_rand = args.N_rand
     use_batching = not args.no_batching
