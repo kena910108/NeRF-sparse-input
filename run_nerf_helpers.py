@@ -30,6 +30,9 @@ def check_arg(args):
     if (args.train_mode == 'prnerf'): 
         if not args.use_viewdirs:
             raise ValueError(f"If train mode == prnerf, use_viewdirs must be True")
+    
+    # assert (args.train_mode == 'two-stage') and (args.relight_iters=='0')
+    
     args.expname += f"_scene[{args.train_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]_s[{args.seed}]"
     
     assert args.no_batching == False, f"no_batching reload data is not implemented"
@@ -46,6 +49,37 @@ def sel_i_train(training_scenes, num_scenes):
         sel_indices = np.linspace(start=0, stop=(len(training_scenes) - 1), num=num_scenes, dtype=int)
         training_scenes = training_scenes[sel_indices]
         return training_scenes
+
+def cre_rays_rgb(use_batching, H, W, K, poses, images, i_train, patch_size):
+    if use_batching:
+        # For random ray batching
+        print('get rays')
+        rays = np.stack([get_rays_np(H, W, K, p) for p in poses[:,:3,:4]], 0) # [N, ro+rd, H, W, 3]
+        print('done, concats')
+        rays_rgb = np.concatenate([rays, images[:,None]], 1) # [N, ro+rd+rgb, H, W, 3]
+        rays_rgb = np.transpose(rays_rgb, [0,2,3,1,4]) # [N, H, W, ro+rd+rgb, 3]
+        rays_rgb = np.stack([rays_rgb[i] for i in i_train], 0) # train images only
+        if patch_size > 0:
+            xy0 = np.stack(np.meshgrid(np.arange(H - patch_size + 1), np.arange(W - patch_size + 1), indexing='xy'), axis=-1)
+            xy0 = np.reshape(xy0,[-1, 1, 2])
+            patch_idx = xy0 + np.stack( np.meshgrid(np.arange(patch_size), np.arange(patch_size), indexing='xy'),
+                axis=-1).reshape(1, -1, 2)
+            patch_idx = np.reshape(patch_idx, [-1, 2])
+            print('generate patches')
+            rays_rgb = rays_rgb[:, patch_idx[Ellipsis, 0], patch_idx[Ellipsis, 1]]
+            rays_rgb = np.reshape(rays_rgb, [-1,patch_size**2,3,3])
+            rays_rgb = rays_rgb.astype(np.float32)
+            np.random.shuffle(rays_rgb)
+            rays_rgb = np.reshape(rays_rgb, [-1,3,3])
+        else:
+            rays_rgb = np.reshape(rays_rgb, [-1,3,3]) # [(N-1)*H*W, ro+rd+rgb, 3]
+            rays_rgb = rays_rgb.astype(np.float32)
+            print('shuffle rays')
+            np.random.shuffle(rays_rgb)
+        
+        print('done')
+    return rays_rgb
+        
 
 # Positional encoding (section 5.1)
 class Embedder:

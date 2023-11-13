@@ -460,6 +460,8 @@ def config_parser():
                         help='where to store ckpts and logs')
     parser.add_argument("--datadir", type=str, default='./data/llff/fern', 
                         help='input data directory')
+    parser.add_argument("--refldatadir", type=str, default=None, 
+                        help='input data directory for reflective input')
     parser.add_argument("--seed", type=int, default='0', 
                         help='set seed')
     parser.add_argument("--setdevice", type=int, default='0', 
@@ -475,7 +477,7 @@ def config_parser():
     
     #prnerf
     parser.add_argument("--relight_iters", type=int, default=0,
-                        help="only valid under two-stage training mode")
+                        help="only valid under prnerf training mode")
 
     # training options
     parser.add_argument("--netdepth", type=int, default=8, 
@@ -615,9 +617,15 @@ def train():
     # Load data
     K = None
     if args.dataset_type == 'llff':
-        images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, args.factor,
-                                                                  recenter=True, bd_factor=.75,
-                                                                  spherify=args.spherify)
+        if args.refldatadir is None:
+            images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, args.factor,
+                                                                    recenter=True, bd_factor=.75,
+                                                                    spherify=args.spherify)
+        else:
+            images, refl_images, poses, bds, render_poses, i_test = load_llff_data(args.datadir, args.factor, 
+                                                                    recenter=True, bd_factor=.75,
+                                                                    spherify=args.spherify, refl_basedir= args.refldatadir)
+
         hwf = poses[0,:3,-1]
         poses = poses[:,:3,:4]
         print('Loaded llff', images.shape, render_poses.shape, hwf, args.datadir)
@@ -770,44 +778,16 @@ def train():
     
     patch_size = args.patch_size
 
-    if use_batching:
-        # For random ray batching
-        print('get rays')
-        rays = np.stack([get_rays_np(H, W, K, p) for p in poses[:,:3,:4]], 0) # [N, ro+rd, H, W, 3]
-        print('done, concats')
-        rays_rgb = np.concatenate([rays, images[:,None]], 1) # [N, ro+rd+rgb, H, W, 3]
-        rays_rgb = np.transpose(rays_rgb, [0,2,3,1,4]) # [N, H, W, ro+rd+rgb, 3]
-        rays_rgb = np.stack([rays_rgb[i] for i in i_train], 0) # train images only
-        if patch_size > 0:
-            xy0 = np.stack(np.meshgrid(np.arange(H - patch_size + 1), np.arange(W - patch_size + 1), indexing='xy'), axis=-1)
-            xy0 = np.reshape(xy0,[-1, 1, 2])
-            patch_idx = xy0 + np.stack( np.meshgrid(np.arange(patch_size), np.arange(patch_size), indexing='xy'),
-                axis=-1).reshape(1, -1, 2)
-            patch_idx = np.reshape(patch_idx, [-1, 2])
-            print('generate patches')
-            rays_rgb = rays_rgb[:, patch_idx[Ellipsis, 0], patch_idx[Ellipsis, 1]]
-            rays_rgb = np.reshape(rays_rgb, [-1,patch_size**2,3,3])
-            rays_rgb = rays_rgb.astype(np.float32)
-            np.random.shuffle(rays_rgb)
-            rays_rgb = np.reshape(rays_rgb, [-1,3,3])
-        else:
-            rays_rgb = np.reshape(rays_rgb, [-1,3,3]) # [(N-1)*H*W, ro+rd+rgb, 3]
-            rays_rgb = rays_rgb.astype(np.float32)
-            print('shuffle rays')
-            np.random.shuffle(rays_rgb)
-        
-
-        print('done')
-        i_batch = 0
+    rays_rgb = cre_rays_rgb(use_batching, H, W, K, poses, images, i_train, patch_size)
 
     # Move training data to GPU
     if use_batching:
-        images = torch.Tensor(images).to(device)
-    poses = torch.Tensor(poses).to(device)
-    if use_batching:
         rays_rgb = torch.Tensor(rays_rgb).to(device)
-
-
+        i_batch = 0
+    
+    images = torch.Tensor(images).to(device)
+    poses = torch.Tensor(poses).to(device)
+      
     args.training_iters += 1
     print('Begin')
     print('TRAIN views are', i_train)
@@ -830,6 +810,13 @@ def train():
         if i == args.relight_iters:
             render_kwargs_train['network_fn'].relighting()
             render_kwargs_train['network_fine'].relighting()
+            
+            rays_rgb = cre_rays_rgb(use_batching, H, W, K, poses.cpu().numpy(), refl_images, i_train, patch_size)
+            torch.cuda.empty_cache()
+            gc.collect()
+            
+            rays_rgb = torch.Tensor(rays_rgb).to(device)
+            i_batch = 0
 
         # Sample random ray batch
         if use_batching:
