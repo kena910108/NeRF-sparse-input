@@ -25,16 +25,22 @@ def set_seed(seed, benchmark=True, deterministic=True):
         torch.cuda.deterministic = deterministic
 
 def check_arg(args):
-    if (args.train_mode == 'normal') and args.add_view_iters!=0: raise ValueError(f"should not set add_view iters in train mode: {args.train_mode}")
-    if args.add_view_iters>args.training_iters: raise ValueError(f"add_view_iters: {args.add_view_iters} exceeds training_iters:{args.training_iters}")
+    if (args.train_mode == 'normal') and args.add_view_iters_2stage!=-1: raise ValueError(f"should not set add_view iters in train mode: {args.train_mode}")
+    if args.add_view_iters_2stage>args.training_iters: 
+        raise ValueError(f"add_view_iters_2stage: {args.add_view_iters_2stage} exceeds training_iters:{args.training_iters}")
     if (args.train_mode == 'prnerf'): 
+        add_view_iters = args.add_view_iters_pr
         if not args.use_viewdirs:
             raise ValueError(f"If train mode == prnerf, use_viewdirs must be True")
+        assert (args.add_view_iters_2stage==-1), f"In prnerf mode, add_view_iters_2stage should be -1, so it will not initiate"
     
-    # assert (args.train_mode == 'two-stage') and (args.relight_iters=='0')
+    if args.train_mode == 'two-stage':
+        add_view_iters = args.add_view_iters_2stage
+        assert (args.add_view_iters_pr==-1), f"In two-stage mode, add_view_iters_pr should be -1, so it will not initiate"
     
-    args.expname += f"_scene[{args.train_scenes}]_view[{args.use_viewdirs}]_iter[{args.training_iters}]_s[{args.seed}]"
-    
+    args.expname += f"_scene{args.train_scenes}_view[{args.use_viewdirs}]_addView[{add_view_iters}]_iter[{args.training_iters}]_r[{args.regularize}]_p[{args.patch_size}]_s[{args.seed}]"
+
+
     assert args.no_batching == False, f"no_batching reload data is not implemented"
     return 
 

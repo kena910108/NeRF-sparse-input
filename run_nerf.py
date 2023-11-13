@@ -472,11 +472,11 @@ def config_parser():
                         help="normal training method or two stage training or decouple")
     
     #two-stage
-    parser.add_argument("--add_view_iters", type=int, default=0,
+    parser.add_argument("--add_view_iters_2stage", type=int, default=-1,
                         help="only valid under two-stage training mode")
     
     #prnerf
-    parser.add_argument("--relight_iters", type=int, default=0,
+    parser.add_argument("--add_view_iters_pr", type=int, default=-1,
                         help="only valid under prnerf training mode")
 
     # training options
@@ -796,7 +796,7 @@ def train():
 
     # Summary writers
     # writer = SummaryWriter(os.path.join(basedir, 'summaries', expname))
-    train_info_dict = {"iter":0, "add_view_iters":args.add_view_iters}
+    train_info_dict = {"iter":0, "add_view_iters":args.add_view_iters_2stage}
     render_kwargs_train.update(train_info_dict)
     render_kwargs_test.update(train_info_dict)
 
@@ -807,7 +807,7 @@ def train():
         render_kwargs_train['iter']=i
         render_kwargs_test['iter']=i
 
-        if i == args.relight_iters:
+        if i == args.add_view_iters_pr:
             render_kwargs_train['network_fn'].relighting()
             render_kwargs_train['network_fine'].relighting()
             
