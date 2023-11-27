@@ -93,7 +93,7 @@ def _load_data(basedir, factor=None, width=None, height=None, load_imgs=True):
     if not os.path.exists(imgdir):
         print( imgdir, 'does not exist, returning' )
         return
-    
+
     imgfiles = [os.path.join(imgdir, f) for f in sorted(os.listdir(imgdir)) if f.endswith('JPG') or f.endswith('jpg') or f.endswith('png')]
     if poses.shape[-1] != len(imgfiles):
         print( 'Mismatch between imgs {} and poses {} !!!!'.format(len(imgfiles), poses.shape[-1]) )
@@ -241,10 +241,11 @@ def spherify_poses(poses, bds):
     return poses_reset, new_poses, bds
     
 
-def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=False, path_zflat=False):
+def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=False, path_zflat=False, refl_basedir=None):
     
 
     poses, bds, imgs = _load_data(basedir, factor=factor) # factor=8 downsamples original imgs by 8x
+
     print('Loaded', basedir, bds.min(), bds.max())
     
     # Correct rotation matrix ordering and move variable dim to axis 0
@@ -314,7 +315,15 @@ def load_llff_data(basedir, factor=8, recenter=True, bd_factor=.75, spherify=Fal
     images = images.astype(np.float32)
     poses = poses.astype(np.float32)
 
-    return images, poses, bds, render_poses, i_test
+    if refl_basedir is not None:
+        _, __, imgs_refl = _load_data(refl_basedir, factor=factor)
+        imgs_refl = np.moveaxis(imgs_refl, -1, 0).astype(np.float32)
+        imgs_refl = imgs_refl.astype(np.float32)
+        
+        return images, imgs_refl, poses, bds, render_poses, i_test
+
+    else: 
+        return images, poses, bds, render_poses, i_test
 
 
 def my_minify(basedir, factors=[], resolutions=[]):
