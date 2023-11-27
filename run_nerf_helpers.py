@@ -34,9 +34,15 @@ def check_arg(args):
             raise ValueError(f"If train mode == prnerf, use_viewdirs must be True")
         assert (args.add_view_iters_2stage==-1), f"In prnerf mode, add_view_iters_2stage should be -1, so it will not initiate"
     
-    if args.train_mode == 'two-stage':
+    elif args.train_mode == 'two-stage':
         add_view_iters = args.add_view_iters_2stage
         assert (args.add_view_iters_pr==-1), f"In two-stage mode, add_view_iters_pr should be -1, so it will not initiate"
+    
+    elif args.train_mode == 'normal':
+        add_view_iters = -1
+    
+    else:
+        raise ValueError("train mode should be either [normal, prnerf, prnerf]")
     
     args.expname += f"_scene{args.train_scenes}_view[{args.use_viewdirs}]_addView[{add_view_iters}]_iter[{args.training_iters}]_r[{args.regularize}]_p[{args.patch_size}]_s[{args.seed}]"
 
