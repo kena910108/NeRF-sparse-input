@@ -21,9 +21,33 @@ clearn-NeRF:
 todo:
 1. create git
 2. SSIM, LPIPS (github)
-3. do sparse view training
-4. record the psnr of the final result
+3. record the psnr of the final result
+4. auto set cuda device
+5. select sparse data
+    1. args set data number
+        1. be aware if data number > training number
+        2. -1 all
+    2. check i_train type
+    3. evenly select sparse data number
+
+6. change n_iter
+7. do sparse view training
+
+#change config
+1. auto set exp name
+2. training iter
+3. use_viewdirs
+
+ 
  
 
 findings:
 1. config file directly load in the code/configargparse.ArgumentParser()
+
+11/12
+1. change master to regularize
+2. select sepcific image for training
+3. reload image while training
+
+run 2
+run 3
