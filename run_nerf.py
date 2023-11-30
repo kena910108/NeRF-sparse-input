@@ -334,8 +334,8 @@ def render_rays(ray_batch,
                 network_fn,
                 network_query_fn,
                 N_samples,
-                iter,
-                add_view_iters,
+                iter=0,
+                add_view_iters=0,
                 retraw=False,
                 lindisp=False,
                 perturb=0.,
@@ -757,6 +757,7 @@ def train():
             if args.render_test:
                 # render_test switches to test poses
                 images = images[i_test]
+                images = torch.tensor(images)
             else:
                 # Default is smoother render_poses path
                 images = None
@@ -764,10 +765,19 @@ def train():
             testsavedir = os.path.join(basedir, expname, 'renderonly_{}_{:06d}'.format('test' if args.render_test else 'path', start))
             os.makedirs(testsavedir, exist_ok=True)
             print('test poses shape', render_poses.shape)
+            print(f"test dir: {testsavedir}")
 
-            rgbs, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test, gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor)
-            print('Done rendering', testsavedir)
-            imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
+            render_test, _ = render_path(render_poses, hwf, K, args.chunk, render_kwargs_test, gt_imgs=images, savedir=testsavedir, render_factor=args.render_factor)
+            lpips_vgg = lpips.LPIPS(net='vgg')
+            lpips_test = lpips_vgg(normalize(torch.tensor(render_test).permute(0,3,1,2)), normalize(images.permute(0,3,1,2))).mean().item()                 
+            psnr_test = np.mean([psnr_mtx(images[j].cpu().numpy(), render_test[j], data_range=1.) for j in range(len(i_test))])
+            ssim_test = np.mean([ssim_mtx(images[j].cpu().numpy(), render_test[j], channel_axis=2, data_range=1.) for j in range(len(i_test))])
+            
+            print(f"ssim:{ssim_test}, psnr:{psnr_test}, lpips:{lpips_test},  ")
+
+            
+            # print('Done rendering', testsavedir)
+            # imageio.mimwrite(os.path.join(testsavedir, 'video.mp4'), to8b(rgbs), fps=30, quality=8)
             return
 
     # i_train = sel_i_train(i_train, args.num_scenes)
