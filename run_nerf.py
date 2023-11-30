@@ -902,7 +902,7 @@ def train():
                 neighbor_loss = neighbor_loss + depth2mse(extras['disp0'], patch_size) * args.regularize
                 variance_loss = variance_loss + torch.mean(extras['sharp0']) * args.variance
         loss = rgb_loss + neighbor_loss + variance_loss
-        #set_trace()
+        set_trace()
         loss.backward()
         optimizer.step()
 
@@ -968,7 +968,10 @@ def train():
                         tf.summary.scalar('psnr_test', psnr_test, step=i)
                         tf.summary.scalar('ssim_test', ssim_test, step=i)
                         tf.summary.scalar('psnr_train', psnr.item(), step=i)
-                        tf.summary.scalar('mse_train', loss.item(), step=i) 
+                        tf.summary.scalar('total_mse_train', loss.item(), step=i) 
+                        tf.summary.scalar('rgb_mse_train', rgb_loss.item(), step=i) 
+                        tf.summary.scalar('neighbor_mse_train', neighbor_loss.item(), step=i) 
+                        tf.summary.scalar('variance_mse_train', variance_loss.item(), step=i) 
 
                         for j in range(len(i_test)):
                             tf.summary.image('{:03d}.png'.format(j), torch.tensor(to8b(render_test[j])).unsqueeze(0).cpu(), step=i)
@@ -978,7 +981,7 @@ def train():
                     
 
         if i%args.i_print==0:
-            tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  PSNR: {psnr.item()}")
+            tqdm.write(f"[TRAIN] Iter: {i} Loss: {loss.item()}  N_Loss: {neighbor_loss.item()} V_Loss: {variance_loss.item()}PSNR: {psnr.item()}")
 
         global_step += 1
 
