@@ -7,3 +7,15 @@
 *.dae
 data/*
 logs/*
+myconfigs/*
+requirements.txt
+resource.md
+todo.md
+requirements.txt
+
+configs/lego.txt
+.gitignore
+configs/*
+experiment results/data.csv
+Dennis/records
+
