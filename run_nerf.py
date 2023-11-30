@@ -137,7 +137,7 @@ def render(H, W, K, chunk=1024*32, rays=None, c2w=None, ndc=True,
         k_sh = list(sh[:-1]) + list(all_ret[k].shape[1:])
         all_ret[k] = torch.reshape(all_ret[k], k_sh)
 
-    k_extract = ['rgb_map', 'disp_map', 'acc_map', 'depth_map']
+    k_extract = ['rgb_map', 'disp_map', 'acc_map', 'sharp_loss']
     ret_list = [all_ret[k] for k in k_extract]
     ret_dict = {k : all_ret[k] for k in all_ret if k not in k_extract}
     return ret_list + [ret_dict]
@@ -161,7 +161,7 @@ def render_path(render_poses, hwf, K, chunk, render_kwargs, gt_imgs=None, savedi
         print(i, time.time() - t)
         t = time.time()
 
-        rgb, disp, acc, depth, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3,:4], **render_kwargs)
+        rgb, disp, acc, sharp_loss, _ = render(H, W, K, chunk=chunk, c2w=c2w[:3,:4], **render_kwargs)
 
         rgbs.append(rgb.cpu().numpy())
         disps.append(disp.cpu().numpy())
@@ -412,11 +412,11 @@ def render_rays(ray_batch,
 
 #     raw = run_network(pts)
     raw = network_query_fn(pts, viewdirs, network_fn)
-    rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
+    rgb_map, disp_map, acc_map, weights, sharp_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
     if N_importance > 0:
 
-        rgb_map_0, disp_map_0, acc_map_0, depth_map_0 = rgb_map, disp_map, acc_map, depth_map
+        rgb_map_0, disp_map_0, acc_map_0, sharp_loss_0 = rgb_map, disp_map, acc_map, sharp_loss
 
         z_vals_mid = .5 * (z_vals[...,1:] + z_vals[...,:-1])
         z_samples = sample_pdf(z_vals_mid, weights[...,1:-1], N_importance, det=(perturb==0.), pytest=pytest)
@@ -429,16 +429,16 @@ def render_rays(ray_batch,
 #         raw = run_network(pts, fn=run_fn)
         raw = network_query_fn(pts, viewdirs, run_fn)
 
-        rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
+        rgb_map, disp_map, acc_map, weights, sharp_loss = raw2outputs(raw, z_vals, rays_d, raw_noise_std, white_bkgd, pytest=pytest)
 
-    ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'depth_map' : depth_map}
+    ret = {'rgb_map' : rgb_map, 'disp_map' : disp_map, 'acc_map' : acc_map, 'sharp_loss' : sharp_loss}
     if retraw:
         ret['raw'] = raw
     if N_importance > 0:
         ret['rgb0'] = rgb_map_0
         ret['disp0'] = disp_map_0
         ret['acc0'] = acc_map_0
-        ret['depth0'] = depth_map_0
+        ret['sharp0'] = sharp_loss_0
         ret['z_std'] = torch.std(z_samples, dim=-1, unbiased=False)  # [N_rays]
 
     for k in ret:
@@ -591,6 +591,7 @@ def config_parser():
     ## regularize
     parser.add_argument("--regularize", type=float, default= 0.0, help='set regularize parameter')
     parser.add_argument("--patch_size", type=int, default= 0, help='patch size for regularization (RegNeRF)')
+    parser.add_argument("--variance", type=float, default= 0.0, help='set regularize parameter')
     
     return parser
 
@@ -877,28 +878,31 @@ def train():
 
 
         #####  Core optimization loop  #####
-        rgb, disp, acc, depth, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
+        rgb, disp, acc, sharp_loss, extras = render(H, W, K, chunk=args.chunk, rays=batch_rays,
                                                 verbose=i < 10, retraw=True,
                                                 **render_kwargs_train)
 
         optimizer.zero_grad()
         img_loss = img2mse(rgb, target_s)
         trans = extras['raw'][...,-1]
-        loss = img_loss
+        rgb_loss = img_loss
+        neighbor_loss = torch.tensor(0.0)
+        variance_loss = torch.tensor(0.0)
         psnr = mse2psnr(img_loss)
 
         if args.regularize > 0.0:
-            depth_loss = depth2mse(disp, patch_size) * args.regularize
-            loss += depth_loss
-
+            neighbor_loss = neighbor_loss + depth2mse(disp, patch_size) * args.regularize
+            variance_loss = variance_loss + torch.mean(sharp_loss) * args.variance
         if 'rgb0' in extras:
             img_loss0 = img2mse(extras['rgb0'], target_s)
-            loss = loss + img_loss0
+            rgb_loss = rgb_loss + img_loss0
             psnr0 = mse2psnr(img_loss0)
 
             if 'disp0' in extras and args.regularize > 0.0:
-                depth_loss0 = depth2mse(extras['disp0'], patch_size) * args.regularize
-                loss += depth_loss0
+                neighbor_loss = neighbor_loss + depth2mse(extras['disp0'], patch_size) * args.regularize
+                variance_loss = variance_loss + torch.mean(extras['sharp0']) * args.variance
+        loss = rgb_loss + neighbor_loss + variance_loss
+        #set_trace()
         loss.backward()
         optimizer.step()
 

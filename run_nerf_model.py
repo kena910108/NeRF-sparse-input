@@ -92,7 +92,7 @@ class NeRF(nn.Module):
 
 
 class PRNeRF(nn.Module):
-    def __init__(self, relightD=4, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], relight=False):
+    def __init__(self, relightD=5, D=8, W=256, input_ch=3, input_ch_views=3, output_ch=4, skips=[4], relight=False):
         """ 
         """
         super(PRNeRF, self).__init__()
